@@ -1,103 +1,104 @@
 # OpenLine Verified Memory
 
-**Vector search finds nearby text. Verified Memory finds tested work.**
+**Vector search finds nearby text. Verified Memory decides what prior work has earned inheritance.**
 
-OpenLine Verified Memory is a tiny, dependency-free demo of receipt-shaped memory for AI agents.
+This repository now has two deliberately separate surfaces.
 
-The point is simple: a useful memory should not only remember what sounds relevant. It should remember what worked, what failed, who checked it, and what should stay quarantined.
+The original `verified_memory_map_demo.py` remains as the small June demonstration of relevance, warnings, and reusable lessons. Its sample JSONL is legacy/demo input: fields such as `status`, `survived`, and `witness` are not trusted evidence.
 
-## Scope
+The hardened v0.2 path is `openline_verified_memory.evidence`. It does not accept those trust fields from an agent. It derives memory standing from verified receiver evidence.
 
-This repo is a small quickstart for the memory shape, not the full OpenLine trust layer.
+## Earned states
 
-It demonstrates how receipt-shaped records can help an agent surface a known trap before a tested fix. The current demo assumes the JSONL records are trusted input. It does not yet verify signatures, witness proofs, survival counts, or external provenance.
+For the Airlock profile:
 
-In production OpenLine, fields like `witness`, `survived`, and `status` should be earned by signed receipts, tests, audit trails, or other external checks. In this quickstart, they are kept simple so the memory behavior is easy to inspect.
+- `candidate` — Airlock signed a generation with one uniquely selected winner, but exact installation has not been evidenced.
+- `inherited` — a separately signed promotion-execution receipt binds that exact winner to the generation receipt and observes the improvement branch at the selected commit.
+- `questioned` — a later signed standing record bound to that promotion says `REOPEN`.
+- failures may remain retrievable as warnings, but failure preservation does not make them inherited.
 
-## Why this exists
+A later `REOPEN` changes what the next generation may treat as established. It does **not** itself roll back the installed version. Installed-state recovery remains a separate receiver-owned action.
 
-AI agents get stuck in loops when they keep reaching for a move that already failed.
+## Why the split matters
 
-A normal memory system might pull back old context because it looks relevant. But relevant is not the same as safe.
+A valid old signature proves that an earlier event was signed. It does not make the lesson permanently entitled to `inherited` standing.
 
-In this demo, the agent asks about a retry loop with no error handling. The first thing it sees is the known trap. Then it sees the tested fix.
+The v0.2 projector therefore reconstructs current memory status from the evidence chain each time:
 
-A failure is not neutral. A failure is a warning that earned its place.
+```text
+signed Airlock generation selection
+        ↓
+candidate
+        ↓
+signed exact promotion execution
+        ↓
+inherited
+        ↓
+signed standing REOPEN
+        ↓
+questioned
+```
 
-## Run the demo
+The caller cannot override `status`, `survived`, or `witness`. `survived` is counted from exact verified promotion execution, not copied from JSON.
+
+## API
+
+```python
+from openline_verified_memory import derive_airlock_memory, established
+
+memory = derive_airlock_memory(
+    lesson_id="lesson-1",
+    title="bounded retry",
+    text="use bounded retry",
+    generation_record=generation_receipt,
+    promotion_record=promotion_receipt,
+    standing_record=standing_receipt,   # optional
+    key=receiver_pinned_key,
+)
+
+usable_next_generation = established([memory])
+```
+
+This first hardened adapter verifies Airlock's current HMAC-SHA256 signed-envelope shape. The key is a receiver-pinned local trust anchor. This is not a claim that HMAC receipts are public third-party attestations.
+
+## What this does not prove
+
+Verified Memory does not decide whether an evaluator was good, whether an Airlock objective captures total product value, or whether a claimed fact about the outside world is true.
+
+It answers a narrower question:
+
+> Given evidence from a receiver whose key is pinned here, what prior lesson is currently entitled to be presented as established inheritance?
+
+Other systems can add their own evidence adapters without reintroducing caller-supplied trust fields.
+
+## Legacy relevance demo
+
+The original demo still runs:
 
 ```bash
 python verified_memory_map_demo.py "agent retry loop with no error handling"
 ```
 
-Expected shape:
+It is useful for the retrieval behavior: relevant quarantined failures can surface as warnings rather than disappear. Do not use its supplied `status`, `survived`, or `witness` fields as authority.
 
-```text
-1. quarantined — Infinite while-loop agent wrapper with no error handling
-2. inherited — Add bounded retries and explicit failure receipts
-```
-
-The known failure appears first because it is relevant to the query and should be treated as a warning, not forgotten.
-
-The tested fix appears second because it is reusable work.
-
-## What the demo shows
-
-Each memory record is a small receipt-shaped object with a lesson, status, survival count, witness, and reuse rule.
-
-The ranker uses simple token overlap, negation awareness, survival score, witness quality, status, and quarantine behavior to show the memory pattern.
-
-This is not meant to replace vector search. It shows what should sit above it.
-
-Vector search can be the index.
-
-Verified Memory is the record of tested work.
-
-## Example output
-
-```text
-Query: agent retry loop with no error handling
-
-1. quarantined — Infinite while-loop agent wrapper with no error handling
-   score=1.027 | semantic=0.286 | survived=0 | witness=runtime monitor | reuse=warning only
-   A prompt wrapped in an unbounded loop kept retrying after tool failure and produced duplicate actions with no error handling or useful failure record.
-
-2. inherited — Add bounded retries and explicit failure receipts
-   score=0.679 | semantic=0.185 | survived=18 | witness=pytest | reuse=safe for agent reliability work
-   An agent wrapper with max retries, timeout handling, and a signed failure receipt prevented runaway loops in a coding workflow.
-```
-
-Scores may change as the ranker is hardened. The important behavior is the ordering: known trap first, tested fix second.
-
-## Test it
+## Test
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-## Known limitations
+The v0.2 tests cover:
 
-This is a dependency-free demo, so the trust and language handling are intentionally minimal.
+- unique selection without installation stays `candidate`;
+- exact bound installation earns `inherited`;
+- a later `REOPEN` produces `questioned`;
+- valid old signatures do not override newer standing;
+- mismatched or unsigned promotion claims fail closed;
+- tampered generation evidence fails closed.
 
-Unsigned JSONL records can currently claim high-trust fields such as `witness` or `survived`. A hardened version should verify those fields before giving them scoring weight.
+## Next integration
 
-The tokenizer handles simple negation such as “no error handling,” but it does not fully understand compound negation or sentence meaning. A hardened version should add negation-depth tests or use a stronger parser.
-
-## v0.2 hardening targets
-
-The next version should verify trust fields before scoring them. A record should not get high witness or survival weight just because a JSONL line says so.
-
-The next version should also improve negation handling. Single negation is useful for the demo, but compound negation needs explicit tests before the ranker can claim stronger language understanding.
-
-## How this fits OpenLine
-
-OpenLine is a portable receipt layer for AI work.
-
-This repo shows one small behavior OpenLine enables: future agents can learn from records of what actually happened instead of rediscovering the same failure.
-
-The full trust layer belongs in the broader OpenLine stack: signed receipts, witnesses, verification, wallet-held records, and coherence checks.
-
-This quickstart is the doorway.
+`RSI-001` belongs in Airlock, not here. Airlock should run the generations with the worker generator frozen. This package supplies the one evidence-derived inheritance implementation. The later `RSI-002` experiment can add a separately pinned Generator Gate and test whether an accepted search-strategy change improves subsequent unseen-task performance under equal budget.
 
 ## License
 
